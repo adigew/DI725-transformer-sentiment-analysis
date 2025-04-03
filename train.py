@@ -1,119 +1,147 @@
-import os
-import time
-import wandb
 import torch
-import numpy as np
-from torch.utils.data import Dataset, DataLoader
+from torch.nn import functional as F
 from model import GPT, GPTConfig
+import numpy as np
+import os
+import wandb
+import pickle
+import math
 
-# Custom Dataset
-class SentimentDataset(Dataset):
-    def __init__(self, split):
-        with open(f"data/sentiment/processed/{split}_text.txt") as f:
-            self.texts = [line.strip() for line in f]
-        with open(f"data/sentiment/processed/{split}_labels.txt") as f:
-            self.labels = [int(line.strip()) for line in f]
-        
-        # Tokenization stub (replace with your tokenizer)
-        self.vocab = {chr(i): i for i in range(256)}
-        self.stoi = {ch: i for i, ch in enumerate(self.vocab)}
+# Custom data loader
+def get_batch(split):
+    data_path = os.path.join('processed', f'{split}.bin')
+    labels_path = os.path.join('processed', f'{split}_labels.pkl')
+    data = np.memmap(data_path, dtype=np.uint16, mode='r').reshape(-1, block_size)
+    with open(labels_path, 'rb') as f:
+        labels = pickle.load(f)
+    ix = torch.randint(len(labels), (batch_size,))
+    x = torch.from_numpy(data[ix].astype(np.int64))
+    y = torch.tensor([labels[i] for i in ix], dtype=torch.long)
+    if device_type == 'cuda':
+        x, y = x.pin_memory().to(device, non_blocking=True), y.to(device, non_blocking=True)
+    else:
+        x, y = x.to(device), y.to(device)
+    return x, y
 
-    def __len__(self):
-        return len(self.labels)
+# Config
+out_dir = 'out-sentiment'
+eval_interval = 500
+eval_iters = 20
+log_interval = 100
+batch_size = 64
+block_size = 512  # Matches your max_length
+n_layer = 6
+n_head = 6
+n_embd = 384
+dropout = 0.1
+learning_rate = 3e-4
+max_iters = 5000
+lr_decay_iters = 5000
+min_lr = 3e-5
+warmup_iters = 100
+num_classes = 3
+compile = True
 
-    def __getitem__(self, idx):
-        text = self.texts[idx]
-        # Simple character-level tokenization
-        tokens = [self.stoi[ch] for ch in text[:self.config.block_size]]
-        return torch.tensor(tokens, dtype=torch.long), self.labels[idx]
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device_type = 'cuda' if 'cuda' in device else 'cpu'
 
-def get_batch(dataset, batch_size):
-    indices = torch.randint(len(dataset), (batch_size,))
-    texts, labels = zip(*[dataset[i] for i in indices])
-    return torch.stack(texts), torch.tensor(labels)
+# Initialize W&B
+wandb.init(project="nanoGPT-sentiment", config={
+    "batch_size": batch_size,
+    "block_size": block_size,
+    "max_iters": max_iters,
+    "learning_rate": learning_rate,
+    "n_layer": n_layer,
+    "n_head": n_head,
+    "n_embd": n_embd,
+    "dropout": dropout,
+    "num_classes": num_classes,
+    "eval_interval": eval_interval,
+    "eval_iters": eval_iters,
+    "lr_decay_iters": lr_decay_iters,
+    "min_lr": min_lr,
+    "warmup_iters": warmup_iters,
+})
 
-def evaluate(model, dataset):
-    model.eval()
-    losses, accs = [], []
-    with torch.no_grad():
-        for i in range(0, len(dataset), batch_size):
-            texts, labels = get_batch(dataset, batch_size)
-            _, loss = model(texts, labels)
-            losses.append(loss.item())
-            accs.append((logits.argmax(-1) == labels).float().mean().item())
-    model.train()
-    return np.mean(losses), np.mean(accs)
+# Model
+config = GPTConfig(
+    block_size=block_size,
+    vocab_size=50304,
+    n_layer=n_layer,
+    n_head=n_head,
+    n_embd=n_embd,
+    dropout=dropout,
+    num_classes=num_classes
+)
+model = GPT(config)
+model.to(device)
+if compile:
+    model = torch.compile(model)
 
-def main():
-    from config.train_sentiment import config
-    
-    # Initialize WandB
-    wandb.init(
-        project=config.wandb_project,
-        name=config.wandb_run_name,
-        notes=config.wandb_notes,
-        config=config
-    )
-    wandb.define_metric("train/loss", summary="min")
-    wandb.define_metric("val/loss", summary="min")
+# Optimizer
+optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=learning_rate, betas=(0.9, 0.95))
 
-    # Data
-    train_dataset = SentimentDataset("train")
-    val_dataset = SentimentDataset("val")
+# Learning rate scheduler
+def get_lr(it):
+    if it < warmup_iters:
+        return learning_rate * it / warmup_iters
+    if it > lr_decay_iters:
+        return min_lr
+    decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
+    return min_lr + coeff * (learning_rate - min_lr)
 
-    # Model
-    model = GPT(GPTConfig(**config))
-    model.to(config.device)
-    wandb.watch(model, log="all", log_freq=config.log_interval)
+# Training loop
+os.makedirs(out_dir, exist_ok=True)
+for iter_num in range(max_iters):
+    lr = get_lr(iter_num)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
 
-    # Optimizer
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=config.learning_rate,
-        weight_decay=config.weight_decay
-    )
+    x, y = get_batch('train')
+    logits, lm_loss, sentiment_loss = model(x, labels=y)
+    loss = sentiment_loss
 
-    # Training loop
-    best_val_loss = float('inf')
-    train_losses = []
-    
-    for iter in range(config.max_iters):
-        # Training step
-        texts, labels = get_batch(train_dataset, config.batch_size)
-        logits, loss = model(texts, labels)
-        
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+    preds = torch.argmax(logits, dim=-1)
+    train_accuracy = (preds == y).float().mean().item()
 
-        # Log training metrics
-        train_losses.append(loss.item())
-        if iter % config.log_interval == 0:
-            avg_loss = np.mean(train_losses[-config.loss_window_size:])
+    if iter_num % log_interval == 0:
+        print(f"Iter {iter_num}, Loss: {loss.item():.4f}, Accuracy: {train_accuracy:.4f}")
+        wandb.log({
+            "train_loss": loss.item(),
+            "train_accuracy": train_accuracy,
+            "learning_rate": lr,
+            "iteration": iter_num
+        })
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    if iter_num % eval_interval == 0:
+        model.eval()
+        with torch.no_grad():
+            val_loss = 0
+            correct = 0
+            total = 0
+            for _ in range(eval_iters):
+                x_val, y_val = get_batch('val')
+                logits, _, val_sentiment_loss = model(x_val, labels=y_val)
+                val_loss += val_sentiment_loss.item()
+                preds = torch.argmax(logits, dim=-1)
+                correct += (preds == y_val).sum().item()
+                total += y_val.size(0)
+            val_loss /= eval_iters
+            val_accuracy = correct / total
+            print(f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.4f}")
             wandb.log({
-                "iter": iter,
-                "train/loss": loss.item(),
-                "train/loss_smooth": avg_loss,
-                "lr": optimizer.param_groups[0]['lr']
-            }, commit=False)
+                "val_loss": val_loss,
+                "val_accuracy": val_accuracy,
+                "iteration": iter_num
+            })
+        model.train()
 
-        # Evaluation
-        if iter % config.eval_interval == 0:
-            val_loss, val_acc = evaluate(model, val_dataset)
-            wandb.log({
-                "val/loss": val_loss,
-                "val/acc": val_acc
-            }, commit=True)
-            
-            # Save best model
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                torch.save(model.state_dict(), "best_model.pt")
-                wandb.save("best_model.pt")
-
-    # Final save
-    torch.save(model.state_dict(), "final_model.pt")
-    wandb.finish()
-
-if __name__ == "__main__":
-    main()
+# Save checkpoint
+torch.save(model.state_dict(), f'{out_dir}/model.pt')
+wandb.finish()

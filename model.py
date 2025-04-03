@@ -5,14 +5,14 @@ from torch.nn import functional as F
 
 @dataclass
 class GPTConfig:
-    block_size: int = 1024
-    vocab_size: int = 50304  # GPT-2 vocab size
+    block_size: int = 512  # Updated to match your max_length
+    vocab_size: int = 50304
     n_layer: int = 12
     n_head: int = 12
     n_embd: int = 768
     dropout: float = 0.0
     bias: bool = True
-    num_classes: int = 3  # Added for sentiment analysis (e.g., neg, pos, neu)
+    num_classes: int = 3
 
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
@@ -86,9 +86,9 @@ class GPT(nn.Module):
             ln_f = nn.LayerNorm(config.n_embd),
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-        self.sentiment_head = nn.Linear(config.n_embd, config.num_classes, bias=True)  # Sentiment classification head
+        self.sentiment_head = nn.Linear(config.n_embd, config.num_classes, bias=True)
 
-        self.transformer.wte.weight = self.lm_head.weight  # Weight tying
+        self.transformer.wte.weight = self.lm_head.weight
         self.apply(self._init_weights)
 
     def _init_weights(self, module):
@@ -118,7 +118,7 @@ class GPT(nn.Module):
         else:
             lm_loss = None
 
-        sentiment_logits = self.sentiment_head(x[:, -1, :])  # Use last token for classification
+        sentiment_logits = self.sentiment_head(x[:, -1, :])
         if labels is not None:
             sentiment_loss = F.cross_entropy(sentiment_logits, labels)
             return sentiment_logits, lm_loss, sentiment_loss
