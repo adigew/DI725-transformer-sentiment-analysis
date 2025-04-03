@@ -33,7 +33,7 @@ eval_interval = 500
 eval_iters = 20
 log_interval = 100
 batch_size = 64
-block_size = 512  # Matches your max_length
+block_size = 512
 n_layer = 6
 n_head = 6
 n_embd = 384
@@ -44,7 +44,7 @@ lr_decay_iters = 5000
 min_lr = 3e-5
 warmup_iters = 100
 num_classes = 3
-compile = True
+compile = False  # Changed to False to disable torch.compile
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 device_type = 'cuda' if 'cuda' in device else 'cpu'
@@ -80,7 +80,7 @@ config = GPTConfig(
 model = GPT(config)
 model.to(device)
 if compile:
-    model = torch.compile(model)
+    model = torch.compile(model)  # This won’t run since compile is False
 
 # Optimizer
 optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=learning_rate, betas=(0.9, 0.95))
