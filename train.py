@@ -6,41 +6,45 @@ import os
 import wandb
 import pickle
 import math
+from torch.utils.data import DataLoader, Dataset
+import time
 
 # Define base directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
 processed_dir = os.path.join(script_dir, 'data', 'sentiment', 'processed')
 
-# Custom data loader
-def get_batch(split):
-    data_path = os.path.join(processed_dir, f'{split}.bin')
-    labels_path = os.path.join(processed_dir, f'{split}_labels.pkl')
-    data = np.memmap(data_path, dtype=np.uint16, mode='r').reshape(-1, block_size)
-    with open(labels_path, 'rb') as f:
-        labels = pickle.load(f)
-    ix = torch.randint(len(labels), (batch_size,))
-    x = torch.from_numpy(data[ix].astype(np.int64))
-    y = torch.tensor([labels[i] for i in ix], dtype=torch.long)
-    if device_type == 'cuda':
-        x, y = x.pin_memory().to(device, non_blocking=True), y.to(device, non_blocking=True)
-    else:
-        x, y = x.to(device), y.to(device)
-    return x, y
+# Custom Dataset
+class SentimentDataset(Dataset):
+    def __init__(self, split):
+        data_path = os.path.join(processed_dir, f'{split}.bin')
+        labels_path = os.path.join(processed_dir, f'{split}_labels.pkl')
+        self.data = np.memmap(data_path, dtype=np.uint16, mode='r').reshape(-1, block_size)
+        with open(labels_path, 'rb') as f:
+            self.labels = pickle.load(f)
+        print(f"Loaded {split} dataset: {len(self.labels)} samples", flush=True)
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        x = torch.from_numpy(self.data[idx].astype(np.int64))
+        y = torch.tensor(self.labels[idx], dtype=torch.long)
+        return x, y
 
 # Config
 out_dir = 'out-sentiment'
-eval_interval = 500
-eval_iters = 20
-log_interval = 100
-batch_size = 64
+eval_interval = 100
+eval_iters = 10
+log_interval = 50
+batch_size = 32
 block_size = 512
 n_layer = 6
 n_head = 6
 n_embd = 384
 dropout = 0.1
 learning_rate = 3e-4
-max_iters = 5000
-lr_decay_iters = 5000
+max_iters = 1000
+lr_decay_iters = 1000
 min_lr = 3e-5
 warmup_iters = 100
 num_classes = 3
@@ -48,9 +52,16 @@ compile = False
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 device_type = 'cuda' if 'cuda' in device else 'cpu'
-print(f"Using device: {device}")
+print(f"Using device: {device}", flush=True)
 
-# Initialize W&B
+# DataLoaders
+train_dataset = SentimentDataset('train')
+val_dataset = SentimentDataset('val')
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)
+print("DataLoaders initialized", flush=True)
+
+# Initialize W&B in online mode
 wandb.init(project="nanoGPT-sentiment", config={
     "batch_size": batch_size,
     "block_size": block_size,
@@ -68,6 +79,7 @@ wandb.init(project="nanoGPT-sentiment", config={
     "warmup_iters": warmup_iters,
     "device": device,
 })
+print("W&B initialized in online mode. View live at: https://wandb.ai/<your-username>/nanoGPT-sentiment", flush=True)
 
 # Model
 config = GPTConfig(
@@ -81,11 +93,13 @@ config = GPTConfig(
 )
 model = GPT(config)
 model.to(device)
+print("Model moved to device", flush=True)
 if compile:
     model = torch.compile(model)
 
 # Optimizer
 optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=learning_rate, betas=(0.9, 0.95))
+print("Optimizer initialized", flush=True)
 
 # Learning rate scheduler
 def get_lr(it):
@@ -98,33 +112,59 @@ def get_lr(it):
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
     return min_lr + coeff * (learning_rate - min_lr)
 
-# Training loop with error handling
+# Training loop with timing
 os.makedirs(out_dir, exist_ok=True)
+train_iterator = iter(train_loader)
+print("Starting training loop", flush=True)
 try:
     for iter_num in range(max_iters):
+        start_time = time.time()
+
         lr = get_lr(iter_num)
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
-        x, y = get_batch('train')
+        # Data loading
+        data_start = time.time()
+        try:
+            x, y = next(train_iterator)
+        except StopIteration:
+            train_iterator = iter(train_loader)
+            x, y = next(train_iterator)
+        if device_type == 'cuda':
+            x, y = x.pin_memory().to(device, non_blocking=True), y.to(device, non_blocking=True)
+        else:
+            x, y = x.to(device), y.to(device)
+        data_time = time.time() - data_start
+
+        # Forward pass
+        forward_start = time.time()
         logits, lm_loss, sentiment_loss = model(x, labels=y)
         loss = sentiment_loss
+        forward_time = time.time() - forward_start
 
+        # Backward pass
+        backward_start = time.time()
         preds = torch.argmax(logits, dim=-1)
         train_accuracy = (preds == y).float().mean().item()
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        backward_time = time.time() - backward_start
 
-        if iter_num % log_interval == 0:
-            print(f"Iter {iter_num}, Loss: {loss.item():.4f}, Accuracy: {train_accuracy:.4f}")
+        if iter_num % log_interval == 0 or iter_num == 0:
+            total_time = time.time() - start_time
+            print(f"Iter {iter_num}, Loss: {loss.item():.4f}, Accuracy: {train_accuracy:.4f}, "
+                  f"Data: {data_time:.3f}s, Forward: {forward_time:.3f}s, Backward: {backward_time:.3f}s, Total: {total_time:.3f}s", flush=True)
             wandb.log({
                 "train_loss": loss.item(),
                 "train_accuracy": train_accuracy,
                 "learning_rate": lr,
-                "iteration": iter_num
+                "iteration": iter_num,
+                "data_time": data_time,
+                "forward_time": forward_time,
+                "backward_time": backward_time,
             })
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
 
         if iter_num % eval_interval == 0:
             model.eval()
@@ -132,8 +172,13 @@ try:
                 val_loss = 0
                 correct = 0
                 total = 0
-                for _ in range(eval_iters):
-                    x_val, y_val = get_batch('val')
+                for i, (x_val, y_val) in enumerate(val_loader):
+                    if i >= eval_iters:
+                        break
+                    if device_type == 'cuda':
+                        x_val, y_val = x_val.pin_memory().to(device, non_blocking=True), y_val.to(device, non_blocking=True)
+                    else:
+                        x_val, y_val = x_val.to(device), y_val.to(device)
                     logits, _, val_sentiment_loss = model(x_val, labels=y_val)
                     val_loss += val_sentiment_loss.item()
                     preds = torch.argmax(logits, dim=-1)
@@ -141,17 +186,19 @@ try:
                     total += y_val.size(0)
                 val_loss /= eval_iters
                 val_accuracy = correct / total
-                print(f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.4f}")
+                print(f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.4f}", flush=True)
                 wandb.log({
                     "val_loss": val_loss,
                     "val_accuracy": val_accuracy,
                     "iteration": iter_num
                 })
             model.train()
+
 except Exception as e:
-    print(f"Error during training: {e}")
+    print(f"Error during training: {e}", flush=True)
     raise
 
 # Save checkpoint
 torch.save(model.state_dict(), f'{out_dir}/model.pt')
 wandb.finish()
+print("Training complete. View results at: https://wandb.ai/<your-username>/nanoGPT-sentiment", flush=True)
