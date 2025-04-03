@@ -1,3 +1,7 @@
+# Ignore model files
+out-sentiment/model.pt
+out-sentiment/*.pt  # (Optional: ignores all .pt files in out-sentiment)
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
