@@ -43,8 +43,8 @@ n_head = 6
 n_embd = 384
 dropout = 0.1
 learning_rate = 3e-4
-max_iters = 1000
-lr_decay_iters = 1000
+max_iters = 600  # Reduced since peak performance is around 400-500
+lr_decay_iters = 600
 min_lr = 3e-5
 warmup_iters = 100
 num_classes = 3
@@ -112,10 +112,14 @@ def get_lr(it):
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
     return min_lr + coeff * (learning_rate - min_lr)
 
-# Training loop with timing
+# Training loop with early stopping
 os.makedirs(out_dir, exist_ok=True)
 train_iterator = iter(train_loader)
 print("Starting training loop", flush=True)
+best_val_loss = float('inf')
+patience = 2  # Stop after 2 consecutive increases in val loss
+patience_counter = 0
+
 try:
     for iter_num in range(max_iters):
         start_time = time.time()
@@ -192,13 +196,26 @@ try:
                     "val_accuracy": val_accuracy,
                     "iteration": iter_num
                 })
+
+                # Early stopping
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    torch.save(model.state_dict(), f'{out_dir}/best_model.pt')  # Save best model
+                else:
+                    patience_counter += 1
+                    print(f"Patience counter: {patience_counter}/{patience}", flush=True)
+                    if patience_counter >= patience:
+                        print("Early stopping triggered. Stopping training.", flush=True)
+                        break
+
             model.train()
 
 except Exception as e:
     print(f"Error during training: {e}", flush=True)
     raise
 
-# Save checkpoint
-torch.save(model.state_dict(), f'{out_dir}/model.pt')
+# Save final checkpoint
+torch.save(model.state_dict(), f'{out_dir}/final_model.pt')
 wandb.finish()
 print("Training complete. View results at: https://wandb.ai/<your-username>/nanoGPT-sentiment", flush=True)
