@@ -7,10 +7,14 @@ import wandb
 import pickle
 import math
 
+# Define base directory relative to this script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+processed_dir = os.path.join(script_dir, 'data', 'sentiment', 'processed')
+
 # Custom data loader
 def get_batch(split):
-    data_path = os.path.join('processed', f'{split}.bin')
-    labels_path = os.path.join('processed', f'{split}_labels.pkl')
+    data_path = os.path.join(processed_dir, f'{split}.bin')
+    labels_path = os.path.join(processed_dir, f'{split}_labels.pkl')
     data = np.memmap(data_path, dtype=np.uint16, mode='r').reshape(-1, block_size)
     with open(labels_path, 'rb') as f:
         labels = pickle.load(f)
