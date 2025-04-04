@@ -31,21 +31,21 @@ class SentimentDataset(Dataset):
         y = torch.tensor(self.labels[idx], dtype=torch.long)
         return x, y
 
-# Config
+# Config with tuned hyperparameters
 out_dir = 'out-sentiment'
 eval_interval = 100
 eval_iters = 10
 log_interval = 50
-batch_size = 32
+batch_size = 16
 block_size = 512
-n_layer = 6
-n_head = 6
-n_embd = 384
-dropout = 0.1
-learning_rate = 3e-4
-max_iters = 600  # Reduced since peak performance is around 400-500
-lr_decay_iters = 600
-min_lr = 3e-5
+n_layer = 4
+n_head = 4          # Changed from 6 to be compatible with n_embd=256
+n_embd = 256
+dropout = 0.2
+learning_rate = 1e-4
+max_iters = 1000
+lr_decay_iters = 1000
+min_lr = 1e-5
 warmup_iters = 100
 num_classes = 3
 compile = False
@@ -98,7 +98,7 @@ if compile:
     model = torch.compile(model)
 
 # Optimizer
-optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=learning_rate, betas=(0.9, 0.95))
+optimizer = model.configure_optimizers(weight_decay=0.01, learning_rate=learning_rate, betas=(0.9, 0.95))
 print("Optimizer initialized", flush=True)
 
 # Learning rate scheduler
@@ -117,7 +117,7 @@ os.makedirs(out_dir, exist_ok=True)
 train_iterator = iter(train_loader)
 print("Starting training loop", flush=True)
 best_val_loss = float('inf')
-patience = 2  # Stop after 2 consecutive increases in val loss
+patience = 2
 patience_counter = 0
 
 try:
@@ -201,7 +201,7 @@ try:
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     patience_counter = 0
-                    torch.save(model.state_dict(), f'{out_dir}/best_model.pt')  # Save best model
+                    torch.save(model.state_dict(), f'{out_dir}/best_model.pt')
                 else:
                     patience_counter += 1
                     print(f"Patience counter: {patience_counter}/{patience}", flush=True)
