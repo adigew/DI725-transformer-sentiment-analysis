@@ -1,0 +1,58 @@
+{
+  "os":  "Windows-10-10.0.19045-SP0",
+  "python":  "3.12.9",
+  "startedAt":  "2025-04-04T18:33:06.268945Z",
+  "args":  [
+    "config/train_sentiment.py",
+    "--out_dir=out-sentiment",
+    "--compile=False",
+    "--eval_iters=20",
+    "--log_interval=50",
+    "--block_size=64",
+    "--batch_size=12",
+    "--n_layer=4",
+    "--n_head=4",
+    "--n_embd=128",
+    "--max_iters=1000",
+    "--lr_decay_iters=1000",
+    "--dropout=0.0"
+  ],
+  "program":  "c:\\Users\\nesil.bor\\Desktop\\Folders\\master\\DI725\\DI725-transformer-sentiment-analysis\\train.py",
+  "codePath":  "train.py",
+  "git":  {
+    "remote":  "https://github.com/adigew/DI725-transformer-sentiment-analysis.git",
+    "commit":  "c15c9e7d49a8d1556b76fbdc85a22fb31aae300e"
+  },
+  "email":  "nesilbor38@gmail.com",
+  "root":  "c:\\Users\\nesil.bor\\Desktop\\Folders\\master\\DI725\\DI725-transformer-sentiment-analysis",
+  "host":  "NESILBOR2",
+  "username":  "nesil.bor",
+  "executable":  "C:\\Users\\nesil.bor\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe",
+  "codePathLocal":  "train.py",
+  "cpu_count":  8,
+  "cpu_count_logical":  16,
+  "gpu":  "NVIDIA GeForce RTX 3060 Laptop GPU",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "506332180480",
+      "used":  "414729273344"
+    }
+  },
+  "memory":  {
+    "total":  "16388091904"
+  },
+  "cpu":  {
+    "count":  8,
+    "countLogical":  16
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 3060 Laptop GPU",
+      "memoryTotal":  "6442450944",
+      "cudaCores":  3840,
+      "architecture":  "Ampere"
+    }
+  ],
+  "cudaVersion":  "12.8"
+}
