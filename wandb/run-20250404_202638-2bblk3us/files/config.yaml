@@ -1,0 +1,54 @@
+_wandb:
+    value:
+        cli_version: 0.18.7
+        m: []
+        python_version: 3.12.9
+        t:
+            "1":
+                - 1
+                - 55
+            "2":
+                - 1
+                - 55
+            "3":
+                - 2
+                - 16
+                - 23
+                - 55
+            "4": 3.12.9
+            "5": 0.18.7
+            "8":
+                - 3
+                - 5
+            "12": 0.18.7
+            "13": windows-amd64
+batch_size:
+    value: 16
+block_size:
+    value: 512
+device:
+    value: cuda
+dropout:
+    value: 0.3
+eval_interval:
+    value: 100
+eval_iters:
+    value: 10
+learning_rate:
+    value: 0.0002
+lr_decay_iters:
+    value: 1000
+max_iters:
+    value: 1000
+min_lr:
+    value: 2e-05
+n_embd:
+    value: 320
+n_head:
+    value: 4
+n_layer:
+    value: 5
+num_classes:
+    value: 3
+warmup_iters:
+    value: 100

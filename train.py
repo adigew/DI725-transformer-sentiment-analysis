@@ -31,21 +31,21 @@ class SentimentDataset(Dataset):
         y = torch.tensor(self.labels[idx], dtype=torch.long)
         return x, y
 
-# Config with tuned hyperparameters
+# Config with refined hyperparameters
 out_dir = 'out-sentiment'
 eval_interval = 100
 eval_iters = 10
 log_interval = 50
 batch_size = 16
 block_size = 512
-n_layer = 4
-n_head = 4          # Changed from 6 to be compatible with n_embd=256
-n_embd = 256
-dropout = 0.2
-learning_rate = 1e-4
+n_layer = 5
+n_head = 4
+n_embd = 384         # Increased for more capacity
+dropout = 0.3        # Back to previous best
+learning_rate = 1.8e-4  # Middle ground
 max_iters = 1000
 lr_decay_iters = 1000
-min_lr = 1e-5
+min_lr = 1.8e-5      # Adjusted for new learning_rate
 warmup_iters = 100
 num_classes = 3
 compile = False
@@ -98,7 +98,7 @@ if compile:
     model = torch.compile(model)
 
 # Optimizer
-optimizer = model.configure_optimizers(weight_decay=0.01, learning_rate=learning_rate, betas=(0.9, 0.95))
+optimizer = model.configure_optimizers(weight_decay=0.01, learning_rate=learning_rate, betas=(0.9, 0.95))  # Back to previous best
 print("Optimizer initialized", flush=True)
 
 # Learning rate scheduler
