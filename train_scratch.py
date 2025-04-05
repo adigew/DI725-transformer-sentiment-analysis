@@ -4,6 +4,7 @@ Incorporates configuration from config/train_sentiment.py.
 """
 
 import torch
+import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
 import os
@@ -12,6 +13,9 @@ import pickle
 import math
 from torch.utils.data import DataLoader, Dataset
 import time
+
+# Enable TF32 for better performance on compatible GPUs
+torch.set_float32_matmul_precision('high')
 
 # Model definition (nanoGPT-style for character-level)
 class LayerNorm(nn.Module):
@@ -157,7 +161,7 @@ class GPT(nn.Module):
 
 # Dataset
 script_dir = os.path.dirname(os.path.abspath(__file__))
-processed_dir = os.path.join(script_dir, 'processed')
+processed_dir = os.path.join(script_dir, 'data', 'sentiment', 'processed')
 
 class SentimentDataset(Dataset):
     def __init__(self, split):
@@ -198,7 +202,7 @@ lr_decay_iters = 5000
 min_lr = 3e-5
 warmup_iters = 100
 num_classes = 3
-compile = True  # Will enable torch.compile if supported
+compile = False  # Disabled torch.compile to avoid Triton dependency
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using device: {device}", flush=True)
