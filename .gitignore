@@ -2,6 +2,9 @@
 out-sentiment/model.pt
 out-sentiment/*.pt  
 out-sentiment/
+out-sentiment-gpt2/
+out-sentiment-gpt2/*.pt  
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
