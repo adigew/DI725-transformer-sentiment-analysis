@@ -1,0 +1,3 @@
+first custom model = https://wandb.ai/adigew-middle-east-technical-university/nanoGPT-sentiment?nw=nwuseradigew
+
+second finetune model = https://wandb.ai/adigew-middle-east-technical-university/nanoGPT-sentiment-gpt2?nw=nwuseradigew
