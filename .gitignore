@@ -5,6 +5,7 @@ out-sentiment/
 out-sentiment-gpt2/
 out-sentiment-gpt2/*.pt  
 out-sentiment-scratch/
+out-sentiment-gpt2-improved/
 
 
 # Byte-compiled / optimized / DLL files
